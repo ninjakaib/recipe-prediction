@@ -6,17 +6,17 @@ Using Machine Learning to find out what's worth eating
 ## Problem Identification
 In this project, we will continue to build off the progress we made analyzing the recipes and reviews dataset from before. This time, we will explore building a predictive model to classify recipes. The classification task we are going to attempt is determining which recipes are *amazing!*  
 
-We could try predicting the rating in terms of the number of stars, but since most of the reviews are 5 stars, we could easily achieve an accuracy of around 70% just by picking 5 every time. We have to choose some condition that recipes must satisy to be considered *amazing.*
+We could try predicting the rating in terms of the number of stars, but since most of the reviews are 5 stars, we could easily achieve an accuracy of around 70% just by picking 5 every time. We have to choose some condition that recipes must satisfy to be considered *amazing.*
 
-**1. Recipes with only 5 star reviews**: This condition will include recipes that are generally well-received, but could potentially include recipes that have been reviewed only once (thus, there might not be a consensus on their quality).
+**1. Recipes with only 5-star reviews**: This condition will include recipes that are generally well-received, but could potentially include recipes that have been reviewed only once (thus, there might not be a consensus on their quality).
 
-**2. Recipes with only 5 star reviews and more than one review**: This condition is more stringent and could exclude some good recipes that received a single non-perfect rating.
+**2. Recipes with only 5-star reviews and more than one review**: This condition is more stringent and could exclude some good recipes that received a single non-perfect rating.
 
-**3. Recipes that have been reviewed more than once, where every review gave a rating of at least 4 stars, and at least one review awarded the maximum 5 stars**: This seems like a good balance. It ensures that the recipe is consistently highly-rated but doesn't require perfection in all reviews.
+**3. Recipes that have been reviewed more than once, where every review gave a rating of at least 4 stars, and at least one review awarded the maximum 5 stars**: This seems like a good balance. It ensures that the recipe is consistently highly rated but doesn't require perfection in all reviews.
 
-**4. Only recipes that have more than one review and then apply the condition of recipes with only 5 star reviews**: This condition attempts to find a balance by excluding recipes with only one review (which might not be representative) and then looking for consistently perfect scores. These will be the same recipes as in condition 2, but with a smaller overall dataset.
+**4. Only recipes that have more than one review and then apply the condition of recipes with only 5-star reviews**: This condition attempts to find a balance by excluding recipes with only one review (which might not be representative) and then looking for consistently perfect scores. These will be the same recipes as in condition 2 but with a smaller overall dataset.
 
-The condition we choose depends on what we want are model to be able to classify. We can think of lower proportions corresponding to 'higher standards' and the classifier will learn to identify 'better' recipes. For this project, the classifier should be trying to find the very best recipes, so we will go with condition 2. This will help us find out what sets those top recipes apart. Other conditions can be tried later to see how it affects models.  
+The condition we choose depends on what we want our model to be able to classify. We can think of lower proportions corresponding to 'higher standards' and the classifier will learn to identify 'better' recipes. For this project, the classifier should be trying to find the very best recipes, so we will go with condition 2. This will help us find out what sets those top recipes apart. Other conditions can be tried later to see how it affects models.  
 
 We can create the target column by running the following code on the merged dataset:
 ```python
@@ -110,6 +110,50 @@ The F1 scores aren't great, and our AUC is close to 0.5 meaning the model is hav
 
 
 ## Final Model
+For the final model, we are going to create some additional features out of the nutrition column to help us with predictions. The ingredients are stored as a list in the column, and the values in the list represent: `['cals', 'fat', 'sugar', 'sodium', 'protein', 'sat_fat', 'carbs']`.  
+
+We will define a custom class that inherits from sklearn's `BaseEstimator` and `TransformerMixin` so we can include this step in our final pipeline. Here's what the class and the pipeline look like:  
+```python
+class NutritionExpander(BaseEstimator, TransformerMixin):
+    def __init__(self, quantile=0.99):
+        self.nuts = ['cals', 'fat', 'sugar', 'sodium', 'protein', 'sat_fat', 'carbs']
+        self.quantile = quantile
+
+    def fit(self, X, y=None):
+        self.limits = {nut: X.apply(lambda x: x[i]).quantile(0.99) for i, nut in enumerate(nuts)}
+        return self
+
+    def transform(self, X):
+        X_expanded = pd.DataFrame(X.tolist())
+        X_expanded.columns = nuts
+        for col in X_expanded.columns:
+            X_expanded[col] = X_expanded[col].clip(upper=self.limits[col])
+        return X_expanded
+
+    def get_feature_names_out(self, input_features=None):
+        return self.nuts
+
+# Create the Tfidf vectorizer
+TfidfIngredients = TfidfVectorizer(tokenizer=lambda x: x, lowercase=False, min_df=50)
+
+# Create the column transformation pipeline
+preprocessor = ColumnTransformer(transformers=[
+    ('', 'passthrough', ['minutes','n_steps','n_ingredients']),
+    ('nutrition', NutritionExpander(), 'nutrition'),
+    ('tfidf', TfidfIngredients, 'ingredients')
+],)
+
+# Now we can create a pipeline that combines our preprocessor with our classifier
+model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('classifier', LogisticRegression()),
+],)
+```
+
+We have used `LogisiticRegression()` as a placeholder model as we are going to do a grid search to try to find a better model and optimize its hyperparameters. 
+
+
+
 
 ```
 [Pipeline] ...... (step 1 of 2) Processing preprocessor, total=   0.4s
