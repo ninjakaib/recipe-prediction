@@ -37,6 +37,7 @@ df['is_amazing'] = (df['rating'] == 5).astype(int)
 ```
 |   recipe_id |   minutes |   n_steps |   n_ingredients | ingredients                                                                                                                            | nutrition                                        |   rating |   count |   mean |   is_amazing |
 |------------:|----------:|----------:|----------------:|:---------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------|---------:|--------:|-------:|-------------:|
+
 |      275022 |        50 |        11 |               7 | ['cheddar cheese', 'macaroni', 'milk', 'eggs', 'bisquick', 'salt', 'red pepper sauce']                                                 | [386.1, 34.0, 7.0, 24.0, 41.0, 62.0, 8.0]        |        1 |       3 |      3 |            0 |
 |      275026 |        45 |         7 |               9 | ['frozen crabmeat', 'sharp cheddar cheese', 'cream cheese', 'onion', 'milk', 'bisquick', 'eggs', 'salt', 'nutmeg']                     | [326.6, 30.0, 12.0, 27.0, 37.0, 51.0, 5.0]       |        1 |       2 |      3 |            0 |
 |      275030 |        45 |        11 |               9 | ['apple pie filling', 'graham cracker crust', 'cream cheese', 'sugar', 'vanilla', 'eggs', 'caramel topping', 'pecan halves', 'pecans'] | [577.7, 53.0, 149.0, 19.0, 14.0, 67.0, 21.0]     |        5 |      10 |      5 |            1 |
