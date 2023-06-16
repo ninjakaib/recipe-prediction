@@ -61,16 +61,77 @@ We will attempt to predict if a recipe belongs to the *amazing* class based on s
 - `ingredients`: A list of the recipe's ingredients.
 - `nutrition`: Nutritional information about the recipe, including calories, fat, sugar, sodium, protein, saturated fat, and carbohydrates.
 
-Predicting based on these features will force our model to (hopefully) learn about what intrinsically makes a recipe good rather than using the user review text. We will quantify how good our model is with F1 score. F1 is a combination of recall and precision; recall is important especially for the positive class since we want the model to be able to identify a high proportion of the *amazing* recipes, and precision is also important since we don't want the model to achieve high recall by simply guessing positive for everything. F1 is a good balance of these two metrics and also better than accuracy especially if we decide to use a different condition for *amazingness* that would make the classes less evenly distributed, similar to how they are in the original dataset. For example, if we vary the condition just slightly to include recipes with only 5 star reviews, but drop the condition that all recipes must have more than a single review, the positive class would only make up 24% of our data. This could lead to a relatively high accuracy but the model won't actually be good at predicting what we want.
+Predicting based on these features will force our model to (hopefully) learn about what intrinsically makes a recipe good rather than using the user review text. We will quantify how good our model is with F1 score. F1 is a combination of recall and precision; recall is important especially for the positive class since we want the model to be able to identify a high proportion of the *amazing* recipes, and precision is also important since we don't want the model to achieve high recall by simply guessing positive for everything.  
+
+F1 is a good balance of these two metrics and also better than accuracy, especially if we decide to use a different condition for *amazingness* that would make the classes less evenly distributed, similar to how they are in the original dataset. For example, if we vary the condition just slightly to include recipes with only 5-star reviews, but drop the condition that all recipes must have more than a single review, the positive class would only make up 24% of our data. This could lead to a relatively high accuracy but the model won't actually be good at predicting what we want.
 
 ## Baseline Model
 
-The baseline model will be a simple model that doesn't use all of the features we selected to give us a ... you guessed it ... baseline of performance to compare future models against. To keep things simple, we won't worry about the nutrition column until later. 
+The baseline model will be a simple model that doesn't use all of the features we selected to give us a ... you guessed it ... baseline of performance to compare future models against. To keep things simple, we won't worry about the nutrition column until later.  
+
+The numerical features, `minutes`, `n_steps`, and `n_ingredients` will be passed through the pipeline un-transformed. To use ingredients as a feature, we can use the lists they are stored in as a pre-tokenized format for sklearn's `TfidfVectorizer` class. Here's what our pipeline looks like:  
+
+```python
+TfidfBaseline = TfidfVectorizer(tokenizer=lambda x: x, lowercase=False, min_df=100)
+
+baseline_preprocessor = ColumnTransformer(transformers=[
+    ('', 'passthrough', ['minutes','n_steps','n_ingredients']),
+    ('tfidf', TfidfBaseline, 'ingredients')
+], verbose=True)
+
+
+# Now we can create a pipeline that combines our preprocessor with our classifier
+baseline_model = Pipeline(steps=[
+    ('preprocessor', baseline_preprocessor),
+    ('classifier', MultinomialNB()),
+], verbose=True)
+```
+
+The `TfidfVectorizer` will take the tokenized corpus and return an array of the TF-IDF scores. The array will look very similar to a bag-of-words transformation, but each term carries relative importance to the overall corpus. The `min_df` parameter controls which words we eliminate from the vocabulary. Words that appear less time, aka ingredients in less recipes than the value of `min_df` will be excluded. This helps reduce the size of the vocabulary significantly from around 11,000 ingredients to several hundred to the low thousands depending on the value. Huge sparse matrices can consume lots of memory, imagine if we used all 11,000 ingredients and 200,000+ rows.  
+
+After a brief wait for the model to train, we can see its performance:  
+```
+Classification Report:
+              precision    recall  f1-score   support
+
+           0       0.55      0.27      0.37      4117
+           1       0.50      0.77      0.61      3947
+
+    accuracy                           0.52      8064
+   macro avg       0.53      0.52      0.49      8064
+weighted avg       0.53      0.52      0.49      8064
+
+
+ROC AUC:
+0.5518896879893714
+```
+
+The F1 scores aren't great, and our AUC is close to 0.5 meaning the model is having a tough time distinguishing between classes, but we can see the recall for class 1 (*amazing* class) is 0.77 which is actually quite good. This means the model is able to pick out a majority of the *amazing* recipes. Can we do better though? Let's move on.
 
 
 ## Final Model
 
+```
+[Pipeline] ...... (step 1 of 2) Processing preprocessor, total=   0.4s
+[Pipeline] ........ (step 2 of 2) Processing classifier, total=  11.6s
 
+Accuracy:
+0.5425347222222222
+
+Confusion Matrix:
+[[2458 1659]
+ [2030 1917]]
+
+Classification Report:
+              precision    recall  f1-score   support
+
+           0       0.55      0.60      0.57      4117
+           1       0.54      0.49      0.51      3947
+
+    accuracy                           0.54      8064
+   macro avg       0.54      0.54      0.54      8064
+weighted avg       0.54      0.54      0.54      8064
+```
 
 ## Fairness Analysis
 
