@@ -89,6 +89,11 @@ baseline_model = Pipeline(steps=[
 
 The `TfidfVectorizer` will take the tokenized corpus and return an array of the TF-IDF scores. The array will look very similar to a bag-of-words transformation, but each term carries relative importance to the overall corpus. The `min_df` parameter controls which words we eliminate from the vocabulary. Words that appear less time, aka ingredients in less recipes than the value of `min_df` will be excluded. This helps reduce the size of the vocabulary significantly from around 11,000 ingredients to several hundred to the low thousands depending on the value. Huge sparse matrices can consume lots of memory, imagine if we used all 11,000 ingredients and 200,000+ rows.  
 
+#### About Naive Bayes  
+For this model we are using sklearn's built in `MultinomialNB()` classifier. The core principle behind Naive Bayes is Bayes' Theorem, which calculates the probability of a certain event given prior knowledge. In text classification, we're interested in the probability of a document belonging to a certain class given the words in it, or in our case, the probability a recipe is *amazing* given the ingredients in it. The 'naive' part of Naive Bayes refers to the assumption that all features are independent of each other, which means the presence or absence of a word doesn't affect the presence or absence of any other word. This is a significant simplification that allows the model to scale well with the number of features and data points.  
+
+Given a training set, the model calculates the prior probability of each class (i.e., the probability of each class in the training set), as well as the conditional probability of each word given each class (i.e., the probability of a word appearing in documents of a certain class).  
+
 After a brief wait for the model to train, we can see its performance:  
 ```
 Classification Report:
@@ -111,6 +116,8 @@ The F1 scores aren't great, and our AUC is close to 0.5 meaning the model is hav
 
 ## Final Model
 For the final model, we are going to create some additional features out of the nutrition column to help us with predictions. The ingredients are stored as a list in the column, and the values in the list represent: `['cals', 'fat', 'sugar', 'sodium', 'protein', 'sat_fat', 'carbs']`.  
+
+The goal of adding these features is to give the model more detailed information about the food itself. The more information that describes the food is available, the more we can learn from that information about what makes recipes *amazing*. However, this will only be the case if our model improves as a result of these new features. If we extensively test a multitude of models with the new features and can't find any noticeable improvement, we can probably conclude those features are unrelated to the target variable. In the case of nutrition levels, one might guess recipes with high levels of sugar would be rated higher (who doesn't love dessert :P).
 
 We will define a custom class that inherits from sklearn's `BaseEstimator` and `TransformerMixin` so we can include this step in our final pipeline. Here's what the class and the pipeline look like:  
 ```python
@@ -150,10 +157,57 @@ model = Pipeline(steps=[
 ],)
 ```
 
-We have used `LogisiticRegression()` as a placeholder model as we are going to do a grid search to try to find a better model and optimize its hyperparameters. 
+We have used `LogisiticRegression()` as a placeholder model as we are going to do a grid search to try to find a better model and optimize its hyperparameters. We can use `GridSearchCV()` to test various combinations of estimators and their parameters. We can also choose the scoring metric for the grid search to optimize over, in our case it will be F1-weighted. We will set `cv=5` to perform 5 cross-validating folds for each combination. Here is the code to perform the search:  
+```python
+# Define models we will test
+models = {
+    'LogisticRegression': LogisticRegression(max_iter=10000),
+    'GradientBoosting': GradientBoostingClassifier(),
+    'LinearSVC': LinearSVC(),
+    'MultinomialNB': MultinomialNB(),
+    'AdaBoostClassifier': AdaBoostClassifier(),
+}
 
+# Define hyperparameters
+param_grid = {
+    'LogisticRegression': {
+        'classifier__C': list(range(1, 10, 2)),
+    },
+    'GradientBoosting': {
+        'classifier__n_estimators': list(range(10, 100, 20)),
+        'classifier__learning_rate': [0.01, 0.1, 1],
+    },
+    'LinearSVC': {
+        'classifier__C': list(range(1, 10, 2)),
+    },
+    'MultinomialNB': {
+        'classifier__alpha': [0.01, 0.1, 1],
+    },
+    'AdaBoostClassifier': {
+        'classifier__n_estimators': list(range(10, 100, 20)),
+        'classifier__learning_rate': [0.01, 0.1, 1],
+    },
+}
 
+model_dict = {}
 
+# Run GridSearchCV for each model
+for model_name in models:
+    model.set_params(classifier=models[model_name])
+    grid_search = GridSearchCV(model, {**param_grid[model_name]}, cv=5, scoring='f1_weighted', verbose=10, n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+    print(f"Best parameters for {model_name}: ", grid_search.best_params_)
+    model_dict[model_name] = grid_search
+```
+Running this could take a while depending on the number of hyperparameters we choose to test, it can easily run away from you. A better strategy to try next time might be to run a randomized search first to get a general idea of what works well for this problem, then find the true optimal parameters with a grid search of a more clearly defined search space. The results from `model_dict` are:  
+```python
+LogisticRegression {'classifier__C': 9} 0.5498391251939745
+GradientBoosting {'classifier__learning_rate': 1, 'classifier__n_estimators': 10} 0.5448388768551441
+LinearSVC {'classifier__C': 1} 0.438448919853249
+MultinomialNB {'classifier__alpha': 0.01} 0.5251873963510547
+AdaBoostClassifier {'classifier__learning_rate': 1, 'classifier__n_estimators': 30} 0.5455777578280969
+```
+Our placeholder classifier turned out to be the best-performing model! Retraining on the entire training set with those settings for `LogisticRegression()` and evaluating on the test set gives us the following:  
 
 ```
 [Pipeline] ...... (step 1 of 2) Processing preprocessor, total=   0.4s
@@ -176,7 +230,50 @@ Classification Report:
    macro avg       0.54      0.54      0.54      8064
 weighted avg       0.54      0.54      0.54      8064
 ```
+Our F1-score did increase slightly, which we hope is the case as the grid search was optimizing for it. We can say overall, the model got slightly better, but if we look at the class 1 recall score, it actually dropped quite significantly meaning the model is not able to identify as many of the *amazing* recipes as the baseline. I would like to try and figure out if it's possible to optimize for a metric for a specific class in classification problems with the tools provided by sklearn in the future. Perhaps a better choice of the scoring metric would lead to different results, but the search did what we asked and found a model that improved F1.  
+
+#### About Logistic Regression  
+Logistic regression is a statistical model used for binary classification problems, which are problems with two possible outcomes. Despite its name, logistic regression is an algorithm for classification, not regression.
+
+The logistic regression model computes a weighted sum of the input features (plus a bias term), but instead of outputting the result directly like a linear regression model, it outputs the logistic of this result. The logistic is a sigmoid function that outputs a number between 0 and 1. It is used to convert the output of the linear part of the model into a probability, which can be used to make a binary prediction.
+
+Here's a step-by-step description of how it works:
+
+**1. Combining the inputs with weights**: Each feature in the dataset is assigned a weight (or coefficient), which can be interpreted as the importance of the feature. A linear equation is then formed which is a weighted sum of the features. It also includes an extra bias term (also known as the intercept term).
+
+**2. Applying the logistic function**: The result of the linear equation is then fed to the logistic function (also known as the sigmoid function). The sigmoid function is an S-shaped curve that can take any real-valued number and map it into a value between 0 and 1.
+
+**3. Making a prediction**: A threshold is chosen, usually 0.5. If the output probability is above the threshold, the model predicts class 1, otherwise, it predicts class 0.
+
+**4. Estimating the parameters**: The parameters (weights and bias) of the model are estimated using a training dataset. This is done by maximizing the likelihood of the observed data, which leads to the minimization of the cost function (also known as log loss). This process is often carried out using an optimization algorithm like Gradient Descent.
+
+The result is a model that can estimate the probability of a certain class given the features. If the estimated probability is greater than 50%, then the model predicts that the instance belongs to that class (positive class, labeled as 1), or else it predicts that it does not (it belongs to the negative class, labeled as 0).  
 
 ## Fairness Analysis
+Finally, we will conduct a permutation test to see if our model has learned any implicit bias. We will be testing how it performs on older vs. newer recipes. We define a recipe to be 'old' if it was submitted before the median submission date in the original `recipes` DataFrame.
+```python
+pd.to_datetime(recipes['submitted']).median()
+```
+```
+Timestamp('2009-05-26 00:00:00')
+```
+
+The median was in May of 2009 even though the data starts at 2008 and goes all the way through 2018. There is a very heavy skew towards early years in terms of the distribution here. We assign recipes with submission dates before then to the 'old' class and everything else is 'new'.  
+
+**NULL HYPOTHESIS**: The best model is fair. Its F1 score is roughly the same for both old and new recipes.  
+**ALTERNATIVE HYPOTHESIS**: The model is unfair and its F1 score is better for newer recipes.  
+
+For the test statistic, we will use the signed difference in means.  (positive means the model is better for new recipes)  
+
+We run the permutation test for just 1000 trials since the model takes a couple of seconds for inference each time, which should be enough to get a clear result.  
 
 <iframe src="assets/f1_permtest.html" width=800 height=600 frameBorder=0></iframe>
+
+Looks pretty significant to me! the P-value from this test is 0.0, therefore we definitely reject the null. It's possible this result has something to do with the heavy skew of dates in the data, but further analysis would be needed to conclude anything.  
+
+* * *
+### Final Thoughts
+
+This was a very simple prediction task, but there is a lot of room to build off it and create something actually cool! We could test out different conditions for defining the *amazing* class and see how it affects model performance. We could also try out some more advanced models known to work well on tabular data like XGBoost, or even neural networks with embedding layers for the text features.  
+
+In the future, I would like to build off of the work I started here and possibly create a recommendation engine for recipes using something like a semantic similarity search. This would be a great opportunity to learn about more advanced NLP techniques like word and sentence-level embeddings, vector databases, and approximate nearest-neighbor algorithms. Thanks for checking out my project!
